@@ -58,6 +58,7 @@ export function calculateDashboardSummary({
       .slice(0, 5),
     topExpenseCategories: calculateTopExpenseCategories(monthlyTransactions, categoryNames),
     totalBalanceCents: Array.from(accountTotals.values()).reduce((total, amount) => total + amount, 0),
+    categoryDistributionChartData: generateChartDataItem(expenseTotalsMap, categoryNames), // <--- NEW CALL HERE
   };
 }
 
