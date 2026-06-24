@@ -123,4 +123,42 @@ describe('calculateDashboardSummary', () => {
       'old-expense',
     ]);
   });
+
+  it('calculates current-month expense usage chart data', () => {
+    const summary = calculateDashboardSummary({
+      accounts,
+      categories,
+      monthKey: '2026-06',
+      transactions,
+    });
+
+    expect(summary.categoryUsageChartData).toEqual([
+      {
+        amountCents: 8000,
+        categoryId: 'groceries',
+        color: '#15803d',
+        name: 'Groceries',
+        percentage: expect.closeTo(94.117647, 5),
+      },
+      {
+        amountCents: 500,
+        categoryId: null,
+        color: '#64748b',
+        name: 'Uncategorized',
+        percentage: expect.closeTo(5.882353, 5),
+      },
+    ]);
+    expect(summary.categoryUsageChartData.reduce((total, item) => total + item.percentage, 0)).toBeCloseTo(100);
+  });
+
+  it('returns empty chart data when there are no current-month expenses', () => {
+    const summary = calculateDashboardSummary({
+      accounts,
+      categories,
+      monthKey: '2026-07',
+      transactions,
+    });
+
+    expect(summary.categoryUsageChartData).toEqual([]);
+  });
 });

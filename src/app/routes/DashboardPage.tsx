@@ -3,6 +3,7 @@ import { useAppServices } from '../appServicesContext';
 import { PageHeader } from '../shared/PageHeader';
 import type { Account } from '../../features/accounts/accountTypes';
 import type { Category } from '../../features/categories/categoryTypes';
+import { CategoryUsageChart } from '../../features/dashboard/CategoryUsageChart';
 import { calculateDashboardSummary, type DashboardSummary } from '../../features/dashboard/dashboardService';
 import type { Transaction } from '../../features/transactions/transactionTypes';
 import { formatCurrency } from '../../shared/money';
@@ -68,19 +69,29 @@ export function DashboardPage() {
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
-          <h2 className="text-base font-semibold">Top expense categories</h2>
+          <h2 className="text-base font-semibold">Expense usage by category</h2>
           {isLoading ? <p className="mt-3 text-sm text-ledger-muted">Loading...</p> : null}
           {!isLoading && summary.topExpenseCategories.length === 0 ? (
             <p className="mt-3 text-sm text-ledger-muted">No expenses recorded for the current month.</p>
           ) : null}
-          <div className="mt-3 space-y-2">
-            {summary.topExpenseCategories.map((category) => (
-              <div key={category.categoryId ?? 'uncategorized'} className="flex items-center justify-between gap-3 text-sm">
-                <span>{category.name}</span>
-                <span className="font-medium">{formatCurrency(category.amountCents)}</span>
-              </div>
-            ))}
-          </div>
+          {!isLoading ? (
+            <div className="mt-4">
+              <CategoryUsageChart
+                data={summary.categoryUsageChartData}
+                totalExpensesCents={summary.monthlyExpensesCents}
+              />
+            </div>
+          ) : null}
+          {summary.topExpenseCategories.length > 0 ? (
+            <div className="mt-4 space-y-2 border-t border-ledger-line pt-4">
+              {summary.topExpenseCategories.map((category) => (
+                <div key={category.categoryId ?? 'uncategorized'} className="flex items-center justify-between gap-3 text-sm">
+                  <span>{category.name}</span>
+                  <span className="font-medium">{formatCurrency(category.amountCents)}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
         <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
           <h2 className="text-base font-semibold">Recent transactions</h2>

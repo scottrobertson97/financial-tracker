@@ -9,7 +9,16 @@ export interface TopExpenseCategory {
   name: string;
 }
 
+export interface CategoryUsageChartItem {
+  amountCents: number;
+  categoryId: string | null;
+  color: string;
+  name: string;
+  percentage: number;
+}
+
 export interface DashboardSummary {
+  categoryUsageChartData: CategoryUsageChartItem[];
   monthlyExpensesCents: number;
   monthlyIncomeCents: number;
   netCashflowCents: number;
@@ -17,6 +26,19 @@ export interface DashboardSummary {
   topExpenseCategories: TopExpenseCategory[];
   totalBalanceCents: number;
 }
+
+const FALLBACK_CATEGORY_COLORS = [
+  '#2563eb',
+  '#15803d',
+  '#b42318',
+  '#7c3aed',
+  '#c2410c',
+  '#0f766e',
+  '#a16207',
+  '#4338ca',
+  '#be123c',
+  '#64748b',
+] as const;
 
 interface CalculateDashboardInput {
   accounts: Account[];
@@ -31,6 +53,7 @@ export function calculateDashboardSummary({
   monthKey = getCurrentMonthKey(),
   transactions,
 }: CalculateDashboardInput): DashboardSummary {
+  const categoryDetails = new Map(categories.map((category) => [category.id, category]));
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
   const accountTotals = new Map(accounts.map((account) => [account.id, account.startingBalanceCents]));
 
@@ -48,17 +71,42 @@ export function calculateDashboardSummary({
   const monthlyExpenseTotal = monthlyTransactions
     .filter((transaction) => transaction.amountCents < 0)
     .reduce((total, transaction) => total + transaction.amountCents, 0);
+  const monthlyExpensesCents = Math.abs(monthlyExpenseTotal);
+  const topExpenseCategories = calculateTopExpenseCategories(monthlyTransactions, categoryNames);
 
   return {
-    monthlyExpensesCents: Math.abs(monthlyExpenseTotal),
+    categoryUsageChartData: calculateCategoryUsageChartData(
+      topExpenseCategories,
+      monthlyExpensesCents,
+      categoryDetails,
+    ),
+    monthlyExpensesCents,
     monthlyIncomeCents,
     netCashflowCents: monthlyIncomeCents + monthlyExpenseTotal,
     recentTransactions: [...transactions]
       .sort((a, b) => `${b.date}-${b.createdAt}`.localeCompare(`${a.date}-${a.createdAt}`))
       .slice(0, 5),
-    topExpenseCategories: calculateTopExpenseCategories(monthlyTransactions, categoryNames),
+    topExpenseCategories,
     totalBalanceCents: Array.from(accountTotals.values()).reduce((total, amount) => total + amount, 0),
   };
+}
+
+function calculateCategoryUsageChartData(
+  topExpenseCategories: TopExpenseCategory[],
+  totalExpensesCents: number,
+  categoryDetails: Map<string, Category>,
+): CategoryUsageChartItem[] {
+  if (totalExpensesCents === 0) {
+    return [];
+  }
+
+  return topExpenseCategories.map((category, index) => ({
+    ...category,
+    color:
+      (category.categoryId ? categoryDetails.get(category.categoryId)?.color : '#64748b') ??
+      FALLBACK_CATEGORY_COLORS[index % FALLBACK_CATEGORY_COLORS.length],
+    percentage: (category.amountCents / totalExpensesCents) * 100,
+  }));
 }
 
 function calculateTopExpenseCategories(
