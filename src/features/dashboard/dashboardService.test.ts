@@ -40,6 +40,14 @@ const categories: Category[] = [
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
   },
+  {
+    id: 'transfer',
+    name: 'Transfer',
+    type: 'transfer',
+    color: '#475569',
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+  },
 ];
 
 const transactions: Transaction[] = [
@@ -160,6 +168,32 @@ describe('calculateDashboardSummary', () => {
     });
 
     expect(summary.categoryUsageChartData).toEqual([]);
+  });
+
+  it('keeps transfers in balances but excludes them from cashflow and spending', () => {
+    const transferPair = [
+      { ...makeTransaction('transfer-out', '2026-06-07', -50000), categoryId: 'transfer' },
+      { ...makeTransaction('transfer-in', '2026-06-07', 50000), categoryId: 'transfer' },
+    ];
+    const summary = calculateDashboardSummary({
+      accounts,
+      categories,
+      referenceDate: '2026-06-30',
+      transactions: [...transactions, ...transferPair],
+    });
+
+    expect(summary.totalBalanceCents).toBe(393000);
+    expect(summary.monthlyIncomeCents).toBe(300000);
+    expect(summary.monthlyExpensesCents).toBe(8500);
+    expect(summary.cashFlowTrend.at(-1)).toMatchObject({
+      expenseCents: 8500,
+      incomeCents: 300000,
+      netCents: 291500,
+    });
+    expect(summary.spendingPace.currentToDateCents).toBe(8500);
+    expect(summary.categoryUsageChartData).not.toContainEqual(
+      expect.objectContaining({ categoryId: 'transfer' }),
+    );
   });
 
   it('builds six- and twelve-month cash flow trends with empty buckets', () => {

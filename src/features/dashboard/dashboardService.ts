@@ -102,6 +102,9 @@ export function calculateDashboardSummary({
   const monthKey = getMonthKey(referenceDate);
   const categoryDetails = new Map(categories.map((category) => [category.id, category]));
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+  const transferCategoryIds = new Set(
+    categories.filter((category) => category.type === 'transfer').map((category) => category.id),
+  );
   const accountTotals = new Map(accounts.map((account) => [account.id, account.startingBalanceCents]));
 
   for (const transaction of transactions) {
@@ -111,8 +114,10 @@ export function calculateDashboardSummary({
     );
   }
 
-  const monthlyTransactions = transactions.filter(
-    (transaction) => isDateInMonth(transaction.date, monthKey) && transaction.date <= referenceDate,
+  const monthlyTransactions = transactions.filter((transaction) =>
+    isDateInMonth(transaction.date, monthKey)
+      && transaction.date <= referenceDate
+      && !isTransferTransaction(transaction, transferCategoryIds),
   );
   const monthlyIncomeCents = monthlyTransactions
     .filter((transaction) => transaction.amountCents > 0)
@@ -126,7 +131,13 @@ export function calculateDashboardSummary({
 
   return {
     balanceTrend: calculateBalanceTrend(accounts, transactions, monthKey, referenceDate, trendMonths),
-    cashFlowTrend: calculateCashFlowTrend(transactions, monthKey, referenceDate, trendMonths),
+    cashFlowTrend: calculateCashFlowTrend(
+      transactions,
+      monthKey,
+      referenceDate,
+      trendMonths,
+      transferCategoryIds,
+    ),
     categoryUsageChartData: calculateCategoryUsageChartData(
       allExpenseCategories,
       monthlyExpensesCents,
@@ -138,7 +149,7 @@ export function calculateDashboardSummary({
     recentTransactions: [...transactions]
       .sort((a, b) => `${b.date}-${b.createdAt}`.localeCompare(`${a.date}-${a.createdAt}`))
       .slice(0, 5),
-    spendingPace: calculateSpendingPace(transactions, referenceDate),
+    spendingPace: calculateSpendingPace(transactions, referenceDate, transferCategoryIds),
     topExpenseCategories,
     totalBalanceCents: Array.from(accountTotals.values()).reduce((total, amount) => total + amount, 0),
   };
@@ -199,11 +210,14 @@ function calculateCashFlowTrend(
   currentMonthKey: string,
   referenceDate: string,
   trendMonths: DashboardTrendMonths,
+  transferCategoryIds: Set<string>,
 ): MonthlyCashFlowPoint[] {
   return getMonthKeysEndingAt(currentMonthKey, trendMonths).map((monthKey) => {
     const endpoint = monthKey === currentMonthKey ? referenceDate : getMonthEndDate(monthKey);
     const monthlyTransactions = transactions.filter(
-      (transaction) => isDateInMonth(transaction.date, monthKey) && transaction.date <= endpoint,
+      (transaction) => isDateInMonth(transaction.date, monthKey)
+        && transaction.date <= endpoint
+        && !isTransferTransaction(transaction, transferCategoryIds),
     );
     const incomeCents = monthlyTransactions
       .filter((transaction) => transaction.amountCents > 0)
@@ -248,6 +262,7 @@ function calculateBalanceTrend(
 function calculateSpendingPace(
   transactions: Transaction[],
   referenceDate: string,
+  transferCategoryIds: Set<string>,
 ): SpendingPaceSummary {
   const currentMonthKey = getMonthKey(referenceDate);
   const previousMonthKey = getPreviousMonthKey(currentMonthKey);
@@ -255,8 +270,8 @@ function calculateSpendingPace(
   const previousMonthDays = getDaysInMonth(previousMonthKey);
   const referenceDay = Number(referenceDate.slice(8, 10));
   const pointCount = Math.max(currentMonthDays, previousMonthDays);
-  const currentDailyTotals = getDailyExpenseTotals(transactions, currentMonthKey);
-  const previousDailyTotals = getDailyExpenseTotals(transactions, previousMonthKey);
+  const currentDailyTotals = getDailyExpenseTotals(transactions, currentMonthKey, transferCategoryIds);
+  const previousDailyTotals = getDailyExpenseTotals(transactions, previousMonthKey, transferCategoryIds);
   const points: SpendingPacePoint[] = [];
   let currentCumulative = 0;
   let previousCumulative = 0;
@@ -291,11 +306,19 @@ function calculateSpendingPace(
   };
 }
 
-function getDailyExpenseTotals(transactions: Transaction[], monthKey: string): Map<number, number> {
+function getDailyExpenseTotals(
+  transactions: Transaction[],
+  monthKey: string,
+  transferCategoryIds: Set<string>,
+): Map<number, number> {
   const totals = new Map<number, number>();
 
   for (const transaction of transactions) {
-    if (transaction.amountCents >= 0 || !isDateInMonth(transaction.date, monthKey)) {
+    if (
+      transaction.amountCents >= 0
+      || !isDateInMonth(transaction.date, monthKey)
+      || isTransferTransaction(transaction, transferCategoryIds)
+    ) {
       continue;
     }
 
@@ -304,4 +327,8 @@ function getDailyExpenseTotals(transactions: Transaction[], monthKey: string): M
   }
 
   return totals;
+}
+
+function isTransferTransaction(transaction: Transaction, transferCategoryIds: Set<string>): boolean {
+  return transaction.categoryId ? transferCategoryIds.has(transaction.categoryId) : false;
 }

@@ -12,12 +12,14 @@ export function ImportExportPage() {
     accounts: accountService,
     categories: categoryService,
     exportDatabaseBackup,
+    resetToStarterLedger,
     restoreDatabaseBackup,
     transactions: transactionService,
   } = useAppServices();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isResetting, setIsResetting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<string | null>(null);
@@ -79,6 +81,29 @@ export function ImportExportPage() {
     }
   }
 
+  async function handleResetToStarterLedger() {
+    const confirmed = window.confirm(
+      'Reset this ledger to the starter data? This permanently removes all current accounts, categories, and transactions.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsResetting(true);
+    setPageError(null);
+    setPageMessage(null);
+
+    try {
+      await resetToStarterLedger();
+      await loadExportData();
+      setPageMessage('Ledger reset complete. Starter accounts and transactions are ready to explore.');
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Unable to reset the ledger.');
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <PageHeader
@@ -112,7 +137,7 @@ export function ImportExportPage() {
           <button
             type="button"
             onClick={handleDownloadBackup}
-            disabled={isLoading || isRestoring}
+            disabled={isLoading || isResetting || isRestoring}
             className="rounded-md bg-ledger-accent px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             Download database backup
@@ -121,7 +146,7 @@ export function ImportExportPage() {
             <input
               type="file"
               accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3,application/octet-stream"
-              disabled={isRestoring}
+              disabled={isResetting || isRestoring}
               onChange={(event) => {
                 void handleRestoreBackup(event.target.files?.[0] ?? null);
                 event.target.value = '';
@@ -131,6 +156,21 @@ export function ImportExportPage() {
             {isRestoring ? 'Restoring...' : 'Restore backup'}
           </label>
         </div>
+      </div>
+      <div className="rounded-md border border-red-200 bg-red-50 p-4">
+        <h2 className="text-base font-semibold text-ledger-loss">Reset ledger</h2>
+        <p className="mt-2 max-w-2xl text-sm text-ledger-muted">
+          Permanently replace all current accounts, categories, and transactions with the starter ledger.
+          Download a database backup first if you may need the current data again.
+        </p>
+        <button
+          type="button"
+          onClick={() => void handleResetToStarterLedger()}
+          disabled={isLoading || isResetting || isRestoring}
+          className="mt-4 rounded-md bg-ledger-loss px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isResetting ? 'Resetting...' : 'Reset to starter data'}
+        </button>
       </div>
     </section>
   );

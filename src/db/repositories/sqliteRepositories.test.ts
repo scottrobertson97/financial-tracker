@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { SqliteAccountRepository } from './sqliteAccountRepository';
 import { SqliteCategoryRepository } from './sqliteCategoryRepository';
 import { SqliteTransactionRepository } from './sqliteTransactionRepository';
-import { seedDefaultCategories, defaultCategories } from '../seed';
+import {
+  defaultCategories,
+  markStarterLedgerAsRestored,
+  resetToStarterLedger,
+  seedDefaultCategories,
+  seedStarterLedger,
+} from '../seed';
 import { createSqliteClient, type SqliteClient } from '../sqliteClient';
 import { createMemorySqliteStorage, type SqliteStorage } from '../sqliteStorage';
 
@@ -108,6 +114,91 @@ describe('SQLite repositories', () => {
     expect(categories.map((category) => category.name)).toContain('Transfer');
 
     closeClient(client);
+  });
+
+  it('seeds a varied starter ledger once on an empty database', async () => {
+    const repositories = await createRepositories();
+    const seedInput = {
+      ...repositories,
+      referenceDate: new Date(2026, 7, 9),
+    };
+
+    await seedStarterLedger(seedInput);
+    await seedStarterLedger(seedInput);
+
+    const accounts = await repositories.accountRepository.list();
+    const categories = await repositories.categoryRepository.list();
+    const transactions = await repositories.transactionRepository.list();
+
+    expect(accounts).toHaveLength(6);
+    expect(new Set(accounts.map((account) => account.type))).toEqual(
+      new Set(['checking', 'savings', 'credit', 'cash', 'investment', 'other']),
+    );
+    expect(transactions).toHaveLength(46);
+    expect(new Set(transactions.map((transaction) => transaction.status))).toEqual(
+      new Set(['pending', 'cleared', 'reconciled']),
+    );
+    expect(transactions.every((transaction) => transaction.date >= '2026-03-01')).toBe(true);
+    expect(transactions.every((transaction) => transaction.date <= '2026-08-09')).toBe(true);
+
+    const categoryTypes = new Map(categories.map((category) => [category.id, category.type]));
+    expect(new Set(transactions.map((transaction) => (
+      transaction.categoryId ? categoryTypes.get(transaction.categoryId) : 'uncategorized'
+    )))).toEqual(new Set(['income', 'expense', 'transfer', 'uncategorized']));
+
+    closeClient(repositories.client);
+  });
+
+  it('does not add starter transactions to an existing or restored ledger', async () => {
+    const existing = await createRepositories();
+    await existing.accountRepository.create({
+      name: 'My Checking',
+      type: 'checking',
+      startingBalanceCents: 10000,
+    });
+
+    await seedStarterLedger({
+      ...existing,
+      referenceDate: new Date(2026, 7, 9),
+    });
+
+    expect((await existing.accountRepository.list()).map((account) => account.name)).toEqual(['My Checking']);
+    expect(await existing.transactionRepository.list()).toEqual([]);
+    closeClient(existing.client);
+
+    const restored = await createRepositories();
+    await markStarterLedgerAsRestored(restored.client);
+    await seedStarterLedger({
+      ...restored,
+      referenceDate: new Date(2026, 7, 9),
+    });
+
+    expect(await restored.accountRepository.list()).toEqual([]);
+    expect(await restored.transactionRepository.list()).toEqual([]);
+    closeClient(restored.client);
+  });
+
+  it('resets an existing ledger back to the starter data', async () => {
+    const repositories = await createRepositories();
+    const seedInput = {
+      ...repositories,
+      referenceDate: new Date(2026, 7, 9),
+    };
+    await seedStarterLedger(seedInput);
+    await repositories.accountRepository.create({
+      name: 'Temporary Account',
+      type: 'checking',
+      startingBalanceCents: 12345,
+    });
+
+    await resetToStarterLedger(seedInput);
+
+    const accounts = await repositories.accountRepository.list();
+    expect(accounts).toHaveLength(6);
+    expect(accounts.map((account) => account.name)).not.toContain('Temporary Account');
+    expect(await repositories.transactionRepository.list()).toHaveLength(46);
+
+    closeClient(repositories.client);
   });
 
   it('prevents deleting accounts or categories used by transactions', async () => {
