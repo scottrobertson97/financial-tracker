@@ -3,9 +3,17 @@ import { useAppServices } from '../appServicesContext';
 import { PageHeader } from '../shared/PageHeader';
 import type { Account } from '../../features/accounts/accountTypes';
 import type { Category } from '../../features/categories/categoryTypes';
+import { BalanceTrendChart } from '../../features/dashboard/BalanceTrendChart';
+import { CashFlowTrendChart } from '../../features/dashboard/CashFlowTrendChart';
 import { CategoryUsageChart } from '../../features/dashboard/CategoryUsageChart';
-import { calculateDashboardSummary, type DashboardSummary } from '../../features/dashboard/dashboardService';
+import {
+  calculateDashboardSummary,
+  type DashboardSummary,
+  type DashboardTrendMonths,
+} from '../../features/dashboard/dashboardService';
+import { SpendingPaceChart } from '../../features/dashboard/SpendingPaceChart';
 import type { Transaction } from '../../features/transactions/transactionTypes';
+import { getCurrentDateIso } from '../../shared/dates';
 import { formatCurrency } from '../../shared/money';
 
 export function DashboardPage() {
@@ -14,10 +22,12 @@ export function DashboardPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [trendMonths, setTrendMonths] = useState<DashboardTrendMonths>(6);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const referenceDate = useMemo(() => getCurrentDateIso(), []);
   const summary = useMemo<DashboardSummary>(
-    () => calculateDashboardSummary({ accounts, categories, transactions }),
-    [accounts, categories, transactions],
+    () => calculateDashboardSummary({ accounts, categories, referenceDate, transactions, trendMonths }),
+    [accounts, categories, referenceDate, transactions, trendMonths],
   );
   const accountNames = useMemo(() => new Map(accounts.map((account) => [account.id, account.name])), [accounts]);
   const categoryNames = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
@@ -56,7 +66,7 @@ export function DashboardPage() {
       <PageHeader
         title="Dashboard"
         eyebrow="Review"
-        description="A current-month summary of balances, cashflow, spending categories, and recent ledger activity."
+        description="Review current balances and spending alongside recent cashflow trends."
       />
       {pageError ? <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-ledger-loss">{pageError}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -67,13 +77,54 @@ export function DashboardPage() {
           </div>
         ))}
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-y border-ledger-line py-3">
+        <div>
+          <h2 className="text-sm font-semibold">Trend range</h2>
+          <p className="text-sm text-ledger-muted">Applies to cashflow and balance history.</p>
+        </div>
+        <div aria-label="Trend range" className="inline-flex rounded-md border border-ledger-line bg-ledger-panel p-1" role="group">
+          {([6, 12] as const).map((months) => (
+            <button
+              key={months}
+              aria-pressed={trendMonths === months}
+              className={`min-w-24 rounded px-3 py-1.5 text-sm font-medium transition ${
+                trendMonths === months ? 'bg-ledger-ink text-white' : 'text-ledger-muted hover:bg-slate-100 hover:text-ledger-ink'
+              }`}
+              onClick={() => setTrendMonths(months)}
+              type="button"
+            >
+              {months} months
+            </button>
+          ))}
+        </div>
+      </div>
+      <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+        <div className="mb-4">
+          <h2 className="text-base font-semibold">Monthly cashflow</h2>
+          <p className="mt-1 text-sm text-ledger-muted">Income, expenses, and net movement across the selected range.</p>
+        </div>
+        {isLoading ? <p className="text-sm text-ledger-muted">Loading...</p> : <CashFlowTrendChart data={summary.cashFlowTrend} />}
+      </section>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold">Total balance trend</h2>
+            <p className="mt-1 text-sm text-ledger-muted">Recorded month-end balances through today.</p>
+          </div>
+          {isLoading ? <p className="text-sm text-ledger-muted">Loading...</p> : <BalanceTrendChart data={summary.balanceTrend} />}
+        </section>
+        <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold">Spending pace</h2>
+            <p className="mt-1 text-sm text-ledger-muted">Cumulative expenses compared with last month.</p>
+          </div>
+          {isLoading ? <p className="text-sm text-ledger-muted">Loading...</p> : <SpendingPaceChart data={summary.spendingPace} />}
+        </section>
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
           <h2 className="text-base font-semibold">Expense usage by category</h2>
           {isLoading ? <p className="mt-3 text-sm text-ledger-muted">Loading...</p> : null}
-          {!isLoading && summary.topExpenseCategories.length === 0 ? (
-            <p className="mt-3 text-sm text-ledger-muted">No expenses recorded for the current month.</p>
-          ) : null}
           {!isLoading ? (
             <div className="mt-4">
               <CategoryUsageChart

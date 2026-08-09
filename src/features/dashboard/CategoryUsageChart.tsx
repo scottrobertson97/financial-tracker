@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { ArcElement, Chart, DoughnutController, Legend, Tooltip } from 'chart.js';
 import type { CategoryUsageChartItem } from './dashboardService';
+import { Chart } from './chartSetup';
 import { formatCurrency } from '../../shared/money';
-
-Chart.register(ArcElement, DoughnutController, Legend, Tooltip);
 
 interface CategoryUsageChartProps {
   data: CategoryUsageChartItem[];
@@ -99,6 +97,17 @@ export function CategoryUsageChart({ data, totalExpensesCents }: CategoryUsageCh
           </div>
         ))}
       </div>
+      <table className="sr-only">
+        <caption>Current-month expense usage by category</caption>
+        <thead><tr><th>Category</th><th>Amount</th><th>Percentage</th></tr></thead>
+        <tbody>
+          {data.map((item) => (
+            <tr key={item.categoryId ?? 'uncategorized'}>
+              <th>{item.name}</th><td>{formatCurrency(item.amountCents)}</td><td>{item.percentage.toFixed(1)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
