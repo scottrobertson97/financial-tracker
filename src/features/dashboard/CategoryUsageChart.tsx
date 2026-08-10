@@ -1,16 +1,17 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CategoryUsageChartItem } from './dashboardService';
 import { Chart } from './chartSetup';
 import { formatCurrency } from '../../shared/money';
 
 interface CategoryUsageChartProps {
   data: CategoryUsageChartItem[];
-  totalExpensesCents: number;
+  positiveSpendingCents: number;
 }
 
-export function CategoryUsageChart({ data, totalExpensesCents }: CategoryUsageChartProps) {
+export function CategoryUsageChart({ data, positiveSpendingCents }: CategoryUsageChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const chartRef = useRef<Chart<'doughnut'> | null>(null);
+  const chartRef = useRef<Chart<'bar', number[], string> | null>(null);
+  const [showData, setShowData] = useState(false);
 
   useEffect(() => {
     if (!canvasRef.current || data.length === 0) {
@@ -21,21 +22,20 @@ export function CategoryUsageChart({ data, totalExpensesCents }: CategoryUsageCh
 
     chartRef.current?.destroy();
     chartRef.current = new Chart(canvasRef.current, {
-      type: 'doughnut',
+      type: 'bar',
       data: {
         labels: data.map((item) => item.name),
         datasets: [
           {
             data: data.map((item) => item.amountCents),
             backgroundColor: data.map((item) => item.color),
-            borderColor: '#ffffff',
-            borderWidth: 2,
-            hoverOffset: 4,
+            borderRadius: 3,
+            label: 'Net spending',
           },
         ],
       },
       options: {
-        cutout: '62%',
+        indexAxis: 'y',
         maintainAspectRatio: false,
         plugins: {
           legend: {
@@ -49,9 +49,24 @@ export function CategoryUsageChart({ data, totalExpensesCents }: CategoryUsageCh
                   return '';
                 }
 
-                return `${item.name}: ${formatCurrency(item.amountCents)} (${item.percentage.toFixed(1)}%)`;
+                const percentage = item.percentage === null ? '' : ` (${item.percentage.toFixed(1)}%)`;
+                return `${item.name}: ${formatCurrency(item.amountCents)}${percentage}`;
               },
             },
+          },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: {
+              callback(value) {
+                return formatCurrency(Number(value));
+              },
+              maxTicksLimit: 5,
+            },
+          },
+          y: {
+            grid: { display: false },
           },
         },
       },
@@ -71,43 +86,51 @@ export function CategoryUsageChart({ data, totalExpensesCents }: CategoryUsageCh
     );
   }
 
+  const leadingCategory = data.find((item) => item.amountCents > 0);
+  const refundLeader = [...data]
+    .filter((item) => item.amountCents < 0)
+    .sort((a, b) => a.amountCents - b.amountCents)[0];
+  const takeaway = leadingCategory && leadingCategory.percentage !== null
+    ? `${leadingCategory.name} is the largest positive net spending category at ${formatCurrency(leadingCategory.amountCents)} (${leadingCategory.percentage.toFixed(1)}% of ${formatCurrency(positiveSpendingCents)} positive category spending).`
+    : refundLeader
+      ? `${refundLeader.name} produced the largest net refund credit at ${formatCurrency(Math.abs(refundLeader.amountCents))}.`
+      : 'No net category spending is available.';
+
   return (
     <div className="space-y-4">
-      <div className="relative h-64">
-        <canvas ref={canvasRef} aria-label="Current-month expense usage by category" role="img" />
-        <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-ledger-muted">Expenses</p>
-            <p className="text-lg font-semibold">{formatCurrency(totalExpensesCents)}</p>
-          </div>
-        </div>
+      <p className="text-sm text-ledger-muted">
+        {takeaway}
+      </p>
+      <div className="relative h-72">
+        <canvas ref={canvasRef} aria-label="Ranked current-month net spending by category" role="img" />
       </div>
-      <div className="grid gap-2 text-sm sm:grid-cols-2">
-        {data.map((item) => (
-          <div key={item.categoryId ?? 'uncategorized'} className="flex items-center justify-between gap-3">
-            <span className="inline-flex min-w-0 items-center gap-2">
-              <span
-                aria-hidden="true"
-                className="h-3 w-3 shrink-0 rounded-sm"
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="truncate">{item.name}</span>
-            </span>
-            <span className="shrink-0 font-medium">{item.percentage.toFixed(1)}%</span>
-          </div>
-        ))}
+      <div className="border-t border-ledger-line pt-3">
+        <button
+          aria-controls="category-spending-data"
+          aria-expanded={showData}
+          className="rounded border border-ledger-line px-3 py-1.5 text-sm font-medium text-ledger-ink hover:bg-slate-50"
+          onClick={() => setShowData((isShown) => !isShown)}
+          type="button"
+        >
+          {showData ? 'Hide data table' : 'Show data table'}
+        </button>
       </div>
-      <table className="sr-only">
-        <caption>Current-month expense usage by category</caption>
-        <thead><tr><th>Category</th><th>Amount</th><th>Percentage</th></tr></thead>
-        <tbody>
-          {data.map((item) => (
-            <tr key={item.categoryId ?? 'uncategorized'}>
-              <th>{item.name}</th><td>{formatCurrency(item.amountCents)}</td><td>{item.percentage.toFixed(1)}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div
+        className={showData ? 'max-w-full overflow-x-auto' : 'sr-only'}
+        id="category-spending-data"
+      >
+        <table className={showData ? 'min-w-[420px] text-left text-sm' : undefined}>
+          <caption className={showData ? 'pb-2 text-left font-medium' : undefined}>Current-month net spending by category</caption>
+          <thead><tr className={showData ? 'border-b border-ledger-line text-ledger-muted' : undefined}><th className={showData ? 'py-2 pr-3 font-medium' : undefined}>Category</th><th className={showData ? 'px-3 py-2 text-right font-medium' : undefined}>Amount</th><th className={showData ? 'py-2 pl-3 text-right font-medium' : undefined}>Share of positive spending</th></tr></thead>
+          <tbody>
+            {data.map((item) => (
+              <tr className={showData ? 'border-b border-ledger-line last:border-b-0' : undefined} key={item.categoryId ?? 'uncategorized'}>
+                <th className={showData ? 'py-2 pr-3 font-medium' : undefined}>{item.name}</th><td className={showData ? 'px-3 py-2 text-right' : undefined}>{formatCurrency(item.amountCents)}</td><td className={showData ? 'py-2 pl-3 text-right' : undefined}>{item.percentage === null ? 'Not applicable' : `${item.percentage.toFixed(1)}%`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

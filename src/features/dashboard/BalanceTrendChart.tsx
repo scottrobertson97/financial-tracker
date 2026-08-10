@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MonthlyBalancePoint } from './dashboardService';
 import { Chart } from './chartSetup';
 import { formatCurrency } from '../../shared/money';
@@ -10,6 +10,7 @@ interface BalanceTrendChartProps {
 export function BalanceTrendChart({ data }: BalanceTrendChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<'line', number[], string> | null>(null);
+  const [showData, setShowData] = useState(false);
   const hasData = data.some((item) => item.balanceCents !== 0);
   const currentBalanceCents = data.at(-1)?.balanceCents ?? 0;
   const rangeChangeCents = currentBalanceCents - (data[0]?.balanceCents ?? 0);
@@ -93,11 +94,28 @@ export function BalanceTrendChart({ data }: BalanceTrendChartProps) {
       <div className="relative h-64 w-full">
         <canvas ref={canvasRef} aria-label="Total recorded balance by month" role="img" />
       </div>
-      <table className="sr-only">
-        <caption>Total recorded balance by month</caption>
-        <thead><tr><th>Month</th><th>Balance</th></tr></thead>
-        <tbody>{data.map((item) => <tr key={item.monthKey}><th>{item.label}</th><td>{formatCurrency(item.balanceCents)}</td></tr>)}</tbody>
-      </table>
+      <DataToggle controls="balance-trend-data" expanded={showData} onToggle={() => setShowData((value) => !value)} />
+      <div className={showData ? 'max-w-full overflow-x-auto' : 'sr-only'} id="balance-trend-data">
+        <table className={showData ? 'min-w-[360px] text-left text-sm' : undefined}>
+          <caption>Total recorded balance by month</caption>
+          <thead><tr><th>Month</th><th>Balance</th></tr></thead>
+          <tbody>{data.map((item) => <tr key={item.monthKey}><th>{item.label}</th><td>{formatCurrency(item.balanceCents)}</td></tr>)}</tbody>
+        </table>
+      </div>
     </div>
+  );
+}
+
+function DataToggle({ controls, expanded, onToggle }: { controls: string; expanded: boolean; onToggle: () => void }) {
+  return (
+    <button
+      aria-controls={controls}
+      aria-expanded={expanded}
+      className="rounded border border-ledger-line px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+      onClick={onToggle}
+      type="button"
+    >
+      {expanded ? 'Hide data table' : 'Show data table'}
+    </button>
   );
 }

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BalanceTrendChart } from './BalanceTrendChart';
 import { CashFlowTrendChart } from './CashFlowTrendChart';
@@ -62,7 +62,7 @@ describe('dashboard charts', () => {
     }} />);
     expect(screen.getByText('No expenses recorded in either comparison month.')).toBeInTheDocument();
 
-    rerender(<CategoryUsageChart data={[]} totalExpensesCents={0} />);
+    rerender(<CategoryUsageChart data={[]} positiveSpendingCents={0} />);
     expect(screen.getByText('No current-month expense categories to chart.')).toBeInTheDocument();
     expect(chartState.instances).toHaveLength(0);
   });
@@ -70,10 +70,29 @@ describe('dashboard charts', () => {
   it('renders exact accessible values alongside the category canvas', () => {
     render(<CategoryUsageChart
       data={[{ amountCents: 2500, categoryId: 'groceries', color: '#15803d', name: 'Groceries', percentage: 100 }]}
-      totalExpensesCents={2500}
+      positiveSpendingCents={2500}
     />);
 
-    expect(screen.getByRole('img', { name: 'Current-month expense usage by category' })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: 'Current-month expense usage by category' })).toHaveTextContent('$25.00');
+    expect(screen.getByRole('img', { name: 'Ranked current-month net spending by category' })).toBeInTheDocument();
+    expect(screen.getByText('Groceries is the largest positive net spending category at $25.00 (100.0% of $25.00 positive category spending).')).toBeInTheDocument();
+
+    const table = screen.getByRole('table', { name: 'Current-month net spending by category' });
+    expect(table.parentElement).toHaveClass('sr-only');
+    expect(table).toHaveTextContent('$25.00');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show data table' }));
+
+    expect(table.parentElement).not.toHaveClass('sr-only');
+    expect(screen.getByRole('button', { name: 'Hide data table' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('describes refund-only category activity without a misleading percentage', () => {
+    render(<CategoryUsageChart
+      data={[{ amountCents: -2500, categoryId: 'groceries', color: '#15803d', name: 'Groceries', percentage: null }]}
+      positiveSpendingCents={0}
+    />);
+
+    expect(screen.getByText('Groceries produced the largest net refund credit at $25.00.')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Current-month net spending by category' })).toHaveTextContent('Not applicable');
   });
 });

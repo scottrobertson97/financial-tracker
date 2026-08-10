@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MonthlyCashFlowPoint } from './dashboardService';
 import { Chart } from './chartSetup';
 import { formatCurrency } from '../../shared/money';
@@ -10,6 +10,7 @@ interface CashFlowTrendChartProps {
 export function CashFlowTrendChart({ data }: CashFlowTrendChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<'bar' | 'line', number[], string> | null>(null);
+  const [showData, setShowData] = useState(false);
   const hasData = data.some((item) => item.incomeCents !== 0 || item.expenseCents !== 0);
   const totalIncomeCents = data.reduce((total, item) => total + item.incomeCents, 0);
   const totalExpenseCents = data.reduce((total, item) => total + item.expenseCents, 0);
@@ -116,18 +117,29 @@ export function CashFlowTrendChart({ data }: CashFlowTrendChartProps) {
       <div className="relative h-72 w-full">
         <canvas ref={canvasRef} aria-label="Monthly income, expenses, and net cashflow" role="img" />
       </div>
-      <table className="sr-only">
-        <caption>Monthly cash flow values</caption>
-        <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net cashflow</th></tr></thead>
-        <tbody>
-          {data.map((item) => (
-            <tr key={item.monthKey}>
-              <th>{item.label}</th><td>{formatCurrency(item.incomeCents)}</td>
-              <td>{formatCurrency(item.expenseCents)}</td><td>{formatCurrency(item.netCents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <button
+        aria-controls="cash-flow-trend-data"
+        aria-expanded={showData}
+        className="rounded border border-ledger-line px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+        onClick={() => setShowData((value) => !value)}
+        type="button"
+      >
+        {showData ? 'Hide data table' : 'Show data table'}
+      </button>
+      <div className={showData ? 'max-w-full overflow-x-auto' : 'sr-only'} id="cash-flow-trend-data">
+        <table className={showData ? 'min-w-[520px] text-left text-sm' : undefined}>
+          <caption>Monthly cash flow values</caption>
+          <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net cashflow</th></tr></thead>
+          <tbody>
+            {data.map((item) => (
+              <tr key={item.monthKey}>
+                <th>{item.label}</th><td>{formatCurrency(item.incomeCents)}</td>
+                <td>{formatCurrency(item.expenseCents)}</td><td>{formatCurrency(item.netCents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

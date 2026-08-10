@@ -12,6 +12,7 @@ export function ImportExportPage() {
     accounts: accountService,
     categories: categoryService,
     exportDatabaseBackup,
+    resetToEmptyLedger,
     resetToStarterLedger,
     restoreDatabaseBackup,
     transactions: transactionService,
@@ -19,6 +20,7 @@ export function ImportExportPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isResettingToZero, setIsResettingToZero] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -83,7 +85,7 @@ export function ImportExportPage() {
 
   async function handleResetToStarterLedger() {
     const confirmed = window.confirm(
-      'Reset this ledger to the starter data? This permanently removes all current accounts, categories, and transactions.',
+      'Reset this ledger to the starter data? This permanently removes all current accounts, categories, transactions, and budgets.',
     );
     if (!confirmed) {
       return;
@@ -96,11 +98,34 @@ export function ImportExportPage() {
     try {
       await resetToStarterLedger();
       await loadExportData();
-      setPageMessage('Ledger reset complete. Starter accounts and transactions are ready to explore.');
+      setPageMessage('Ledger reset complete. Starter accounts, categories, transactions, and budgets are ready to explore.');
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Unable to reset the ledger.');
     } finally {
       setIsResetting(false);
+    }
+  }
+
+  async function handleResetToZero() {
+    const confirmed = window.confirm(
+      'Reset this ledger to zero? This permanently removes all current accounts, categories, transactions, and budgets and leaves the app empty.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsResettingToZero(true);
+    setPageError(null);
+    setPageMessage(null);
+
+    try {
+      await resetToEmptyLedger();
+      await loadExportData();
+      setPageMessage('Ledger reset to zero. All accounts, categories, transactions, and budgets were removed.');
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Unable to reset the ledger to zero.');
+    } finally {
+      setIsResettingToZero(false);
     }
   }
 
@@ -111,8 +136,8 @@ export function ImportExportPage() {
         eyebrow="Data ownership"
         description="CSV export keeps locally persisted transaction data portable."
       />
-      {pageError ? <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-ledger-loss">{pageError}</p> : null}
-      {pageMessage ? <p className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-ledger-gain">{pageMessage}</p> : null}
+      {pageError ? <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-ledger-loss" role="alert">{pageError}</p> : null}
+      {pageMessage ? <p className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-ledger-gain" role="status">{pageMessage}</p> : null}
       <div className="rounded-md border border-ledger-line bg-ledger-panel p-4">
         <h2 className="text-base font-semibold">CSV export</h2>
         <p className="mt-2 max-w-2xl text-sm text-ledger-muted">
@@ -137,7 +162,7 @@ export function ImportExportPage() {
           <button
             type="button"
             onClick={handleDownloadBackup}
-            disabled={isLoading || isResetting || isRestoring}
+            disabled={isLoading || isResetting || isResettingToZero || isRestoring}
             className="rounded-md bg-ledger-accent px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             Download database backup
@@ -146,7 +171,7 @@ export function ImportExportPage() {
             <input
               type="file"
               accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3,application/octet-stream"
-              disabled={isResetting || isRestoring}
+              disabled={isResetting || isResettingToZero || isRestoring}
               onChange={(event) => {
                 void handleRestoreBackup(event.target.files?.[0] ?? null);
                 event.target.value = '';
@@ -160,17 +185,32 @@ export function ImportExportPage() {
       <div className="rounded-md border border-red-200 bg-red-50 p-4">
         <h2 className="text-base font-semibold text-ledger-loss">Reset ledger</h2>
         <p className="mt-2 max-w-2xl text-sm text-ledger-muted">
-          Permanently replace all current accounts, categories, and transactions with the starter ledger.
+          Permanently replace all current accounts, categories, transactions, and budgets with the starter ledger.
           Download a database backup first if you may need the current data again.
         </p>
         <button
           type="button"
           onClick={() => void handleResetToStarterLedger()}
-          disabled={isLoading || isResetting || isRestoring}
+          disabled={isLoading || isResetting || isResettingToZero || isRestoring}
           className="mt-4 rounded-md bg-ledger-loss px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isResetting ? 'Resetting...' : 'Reset to starter data'}
         </button>
+        <div className="mt-5 border-t border-red-200 pt-4">
+          <h3 className="text-sm font-semibold text-ledger-loss">Start completely empty</h3>
+          <p className="mt-2 max-w-2xl text-sm text-ledger-muted">
+            Remove all accounts, categories, transactions, and budgets without loading starter data.
+            The empty ledger remains empty after reload.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleResetToZero()}
+            disabled={isLoading || isResetting || isResettingToZero || isRestoring}
+            className="mt-4 rounded-md border border-ledger-loss bg-white px-4 py-2 text-sm font-medium text-ledger-loss disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isResettingToZero ? 'Resetting to zero...' : 'Reset to zero'}
+          </button>
+        </div>
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SpendingPaceSummary } from './dashboardService';
 import { Chart } from './chartSetup';
 import { formatCurrency } from '../../shared/money';
@@ -10,8 +10,9 @@ interface SpendingPaceChartProps {
 export function SpendingPaceChart({ data }: SpendingPaceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<'line', (number | null)[], number> | null>(null);
+  const [showData, setShowData] = useState(false);
   const hasData = data.points.some(
-    (point) => (point.currentMonthCents ?? 0) > 0 || (point.previousMonthCents ?? 0) > 0,
+    (point) => (point.currentMonthCents ?? 0) !== 0 || (point.previousMonthCents ?? 0) !== 0,
   );
 
   useEffect(() => {
@@ -114,15 +115,26 @@ export function SpendingPaceChart({ data }: SpendingPaceChartProps) {
       <div className="relative h-64 w-full">
         <canvas ref={canvasRef} aria-label="Cumulative spending by day for the current and previous month" role="img" />
       </div>
-      <table className="sr-only">
-        <caption>Cumulative spending pace by day</caption>
-        <thead><tr><th>Day</th><th>{data.currentMonthLabel}</th><th>{data.previousMonthLabel}</th></tr></thead>
-        <tbody>
-          {data.points.map((point) => (
-            <tr key={point.day}><th>{point.day}</th><td>{point.currentMonthCents === null ? 'Not elapsed' : formatCurrency(point.currentMonthCents)}</td><td>{point.previousMonthCents === null ? 'Not in month' : formatCurrency(point.previousMonthCents)}</td></tr>
-          ))}
-        </tbody>
-      </table>
+      <button
+        aria-controls="spending-pace-data"
+        aria-expanded={showData}
+        className="rounded border border-ledger-line px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+        onClick={() => setShowData((value) => !value)}
+        type="button"
+      >
+        {showData ? 'Hide data table' : 'Show data table'}
+      </button>
+      <div className={showData ? 'max-h-80 max-w-full overflow-auto' : 'sr-only'} id="spending-pace-data">
+        <table className={showData ? 'min-w-[520px] text-left text-sm' : undefined}>
+          <caption>Cumulative spending pace by day</caption>
+          <thead><tr><th>Day</th><th>{data.currentMonthLabel}</th><th>{data.previousMonthLabel}</th></tr></thead>
+          <tbody>
+            {data.points.map((point) => (
+              <tr key={point.day}><th>{point.day}</th><td>{point.currentMonthCents === null ? 'Not elapsed' : formatCurrency(point.currentMonthCents)}</td><td>{point.previousMonthCents === null ? 'Not in month' : formatCurrency(point.previousMonthCents)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

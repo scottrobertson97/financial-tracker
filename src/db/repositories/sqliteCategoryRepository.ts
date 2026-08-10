@@ -48,6 +48,16 @@ export class SqliteCategoryRepository implements CategoryRepository {
       updatedAt: new Date().toISOString(),
     };
 
+    if (updated.type !== 'expense' && updated.type !== existing.type) {
+      const dependentBudgets = this.client.queryOne<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM budgets WHERE category_id = ?',
+        [id],
+      );
+      if ((dependentBudgets?.count ?? 0) > 0) {
+        throw new Error('Cannot change an expense category that has budgets to another type.');
+      }
+    }
+
     await this.client.execute(
       `UPDATE categories
        SET name = ?, type = ?, color = ?, updated_at = ?
@@ -65,6 +75,14 @@ export class SqliteCategoryRepository implements CategoryRepository {
     );
     if ((dependentTransactions?.count ?? 0) > 0) {
       throw new Error('Cannot delete a category that has transactions.');
+    }
+
+    const dependentBudgets = this.client.queryOne<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM budgets WHERE category_id = ?',
+      [id],
+    );
+    if ((dependentBudgets?.count ?? 0) > 0) {
+      throw new Error('Cannot delete a category that has budgets.');
     }
 
     await this.client.execute('DELETE FROM categories WHERE id = ?', [id]);

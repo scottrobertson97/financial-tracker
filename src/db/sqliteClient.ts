@@ -48,25 +48,40 @@ export class SqliteClient {
 
   async transaction<T>(work: () => Promise<T> | T): Promise<T> {
     const isOuterTransaction = this.transactionDepth === 0;
+    const snapshot = isOuterTransaction ? this.db.export() : null;
+    let transactionIsOpen = false;
+
     if (isOuterTransaction) {
       this.db.run('BEGIN IMMEDIATE');
+      transactionIsOpen = true;
     }
     this.transactionDepth += 1;
 
     try {
       const result = await work();
-      this.transactionDepth -= 1;
       if (isOuterTransaction) {
         this.db.run('COMMIT');
+        transactionIsOpen = false;
         await this.flush();
       }
       return result;
     } catch (error) {
-      this.transactionDepth -= 1;
       if (isOuterTransaction) {
-        this.db.run('ROLLBACK');
+        if (transactionIsOpen) {
+          try {
+            this.db.run('ROLLBACK');
+          } catch {
+            if (snapshot) {
+              this.restoreSnapshot(snapshot);
+            }
+          }
+        } else if (snapshot) {
+          this.restoreSnapshot(snapshot);
+        }
       }
       throw error;
+    } finally {
+      this.transactionDepth -= 1;
     }
   }
 
@@ -95,15 +110,26 @@ export class SqliteClient {
       replacement.exec(
         'SELECT id, account_id, category_id, date, description, merchant, amount_cents, notes, status, created_at, updated_at FROM transactions LIMIT 1',
       );
+      replacement.exec(
+        'SELECT id, category_id, month, amount_cents, created_at, updated_at FROM budgets LIMIT 1',
+      );
     } catch (error) {
       replacement.close();
       throw new Error(error instanceof Error ? `Invalid database backup: ${error.message}` : 'Invalid database backup.');
     }
 
+    try {
+      if (this.storage) {
+        await this.storage.save(replacement.export());
+      }
+    } catch (error) {
+      replacement.close();
+      throw error;
+    }
+
     const previous = this.db;
     this.db = replacement;
     previous.close();
-    await this.flush();
   }
 
   close(): void {
@@ -114,6 +140,15 @@ export class SqliteClient {
     if (this.transactionDepth === 0) {
       await this.flush();
     }
+  }
+
+  private restoreSnapshot(snapshot: Uint8Array): void {
+    const restored = new this.sqlJs.Database(snapshot);
+    restored.run('PRAGMA foreign_keys = ON');
+
+    const failed = this.db;
+    this.db = restored;
+    failed.close();
   }
 }
 

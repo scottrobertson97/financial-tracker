@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { SqliteAccountRepository } from './sqliteAccountRepository';
+import { SqliteBudgetRepository } from './sqliteBudgetRepository';
 import { SqliteCategoryRepository } from './sqliteCategoryRepository';
 import { SqliteTransactionRepository } from './sqliteTransactionRepository';
 import {
@@ -20,6 +21,7 @@ async function createRepositories(storage: SqliteStorage = createMemorySqliteSto
 
   return {
     accountRepository: new SqliteAccountRepository(client),
+    budgetRepository: new SqliteBudgetRepository(client),
     categoryRepository: new SqliteCategoryRepository(client),
     client,
     storage,
@@ -129,12 +131,14 @@ describe('SQLite repositories', () => {
     const accounts = await repositories.accountRepository.list();
     const categories = await repositories.categoryRepository.list();
     const transactions = await repositories.transactionRepository.list();
+    const budgetCount = repositories.client.queryOne<{ count: number }>('SELECT COUNT(*) AS count FROM budgets');
 
     expect(accounts).toHaveLength(6);
     expect(new Set(accounts.map((account) => account.type))).toEqual(
       new Set(['checking', 'savings', 'credit', 'cash', 'investment', 'other']),
     );
     expect(transactions).toHaveLength(46);
+    expect(budgetCount?.count).toBe(60);
     expect(new Set(transactions.map((transaction) => transaction.status))).toEqual(
       new Set(['pending', 'cleared', 'reconciled']),
     );
@@ -164,6 +168,7 @@ describe('SQLite repositories', () => {
 
     expect((await existing.accountRepository.list()).map((account) => account.name)).toEqual(['My Checking']);
     expect(await existing.transactionRepository.list()).toEqual([]);
+    expect(existing.client.queryOne<{ count: number }>('SELECT COUNT(*) AS count FROM budgets')?.count).toBe(0);
     closeClient(existing.client);
 
     const restored = await createRepositories();
@@ -175,6 +180,7 @@ describe('SQLite repositories', () => {
 
     expect(await restored.accountRepository.list()).toEqual([]);
     expect(await restored.transactionRepository.list()).toEqual([]);
+    expect(restored.client.queryOne<{ count: number }>('SELECT COUNT(*) AS count FROM budgets')?.count).toBe(0);
     closeClient(restored.client);
   });
 
@@ -197,8 +203,28 @@ describe('SQLite repositories', () => {
     expect(accounts).toHaveLength(6);
     expect(accounts.map((account) => account.name)).not.toContain('Temporary Account');
     expect(await repositories.transactionRepository.list()).toHaveLength(46);
+    expect(repositories.client.queryOne<{ count: number }>('SELECT COUNT(*) AS count FROM budgets')?.count).toBe(60);
 
     closeClient(repositories.client);
+  });
+
+  it('prevents deleting or changing the type of a category used by a budget', async () => {
+    const { budgetRepository, categoryRepository, client } = await createRepositories();
+    const category = await categoryRepository.create({
+      name: 'Planned expense',
+      type: 'expense',
+      color: '#64748b',
+    });
+    await budgetRepository.upsert({
+      amountCents: 25000,
+      categoryId: category.id,
+      month: '2026-08',
+    });
+
+    await expect(categoryRepository.delete(category.id)).rejects.toThrow('has budgets');
+    await expect(categoryRepository.update(category.id, { type: 'income' })).rejects.toThrow('has budgets');
+
+    closeClient(client);
   });
 
   it('prevents deleting accounts or categories used by transactions', async () => {

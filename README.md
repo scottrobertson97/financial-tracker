@@ -35,5 +35,8 @@ Tauri desktop builds on Windows require Microsoft C++ Build Tools with MSVC and 
 - Default categories seed once on first launch.
 - Account/category delete actions show clear errors when records are used by transactions.
 - The dashboard derives balances, current-month income, expenses, net cashflow, top expense categories, and recent transactions from stored data.
+- Monthly budgets compare planned and actual category spending, including six-month historical suggestions.
+- Reports show category spending trends, cash-surplus rates, month-over-month changes, and top merchants.
 - CSV export is available for all transactions and the current filtered transaction view.
 - The local SQLite database can be downloaded as a backup file and restored from a backup file.
+- New empty ledgers open with starter accounts, budgets, and transactions; the Import/Export page can restore that sample ledger or reset to a persistently empty ledger.

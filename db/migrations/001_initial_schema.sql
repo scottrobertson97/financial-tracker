@@ -60,3 +60,15 @@ CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON transactions(account_i
 CREATE INDEX IF NOT EXISTS idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_budgets_month ON budgets(month);
+
+-- Older local databases may contain duplicate category/month rows from before
+-- budget upserts were protected by a unique index. Keep the most recently
+-- inserted row so startup can safely add the constraint without losing a month.
+DELETE FROM budgets
+WHERE rowid NOT IN (
+  SELECT MAX(rowid)
+  FROM budgets
+  GROUP BY category_id, month
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_category_month ON budgets(category_id, month);

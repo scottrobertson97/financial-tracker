@@ -1,4 +1,5 @@
 import type { AccountRepository } from '../features/accounts/accountRepository';
+import type { BudgetRepository } from '../features/budgets/budgetRepository';
 import type { CategoryRepository, CreateCategoryInput } from '../features/categories/categoryRepository';
 import type { Category } from '../features/categories/categoryTypes';
 import type {
@@ -8,6 +9,7 @@ import type {
 import type { SqliteClient } from './sqliteClient';
 
 const STARTER_LEDGER_KEY = 'starter_ledger_v1';
+const STARTER_BUDGETS_KEY = 'starter_budgets_v1';
 
 export const defaultCategories: CreateCategoryInput[] = [
   { name: 'Rent', type: 'expense', color: '#7f1d1d' },
@@ -40,6 +42,7 @@ export async function seedDefaultCategories(categoryRepository: CategoryReposito
 
 interface SeedStarterLedgerInput {
   accountRepository: AccountRepository;
+  budgetRepository: BudgetRepository;
   categoryRepository: CategoryRepository;
   client: SqliteClient;
   referenceDate?: Date;
@@ -48,18 +51,28 @@ interface SeedStarterLedgerInput {
 
 export async function seedStarterLedger({
   accountRepository,
+  budgetRepository,
   categoryRepository,
   client,
   referenceDate = new Date(),
   transactionRepository,
 }: SeedStarterLedgerInput): Promise<void> {
-  await seedDefaultCategories(categoryRepository);
-
   const seedState = client.queryOne<{ value: string }>(
     'SELECT value FROM app_metadata WHERE key = ?',
     [STARTER_LEDGER_KEY],
   );
+  if (seedState?.value === 'empty-ledger') {
+    return;
+  }
+
+  await seedDefaultCategories(categoryRepository);
+
   if (seedState) {
+    if (seedState.value === 'seeded') {
+      await client.transaction(async () => {
+        await seedStarterBudgetsOnce(budgetRepository, categoryRepository, client, referenceDate);
+      });
+    }
     return;
   }
 
@@ -274,6 +287,7 @@ export async function seedStarterLedger({
       await transactionRepository.create(transaction);
     }
 
+    await seedStarterBudgetsOnce(budgetRepository, categoryRepository, client, referenceDate);
     await setStarterLedgerState(client, 'seeded');
   });
 }
@@ -284,15 +298,74 @@ export async function markStarterLedgerAsRestored(client: SqliteClient): Promise
 
 export async function resetToStarterLedger(input: SeedStarterLedgerInput): Promise<void> {
   await input.client.transaction(async () => {
-    await input.client.execute('DELETE FROM transaction_tags');
-    await input.client.execute('DELETE FROM budgets');
-    await input.client.execute('DELETE FROM transactions');
-    await input.client.execute('DELETE FROM accounts');
-    await input.client.execute('DELETE FROM categories');
-    await input.client.execute('DELETE FROM app_metadata WHERE key = ?', [STARTER_LEDGER_KEY]);
+    await clearLedgerTables(input.client);
+    await input.client.execute('DELETE FROM app_metadata WHERE key IN (?, ?)', [
+      STARTER_LEDGER_KEY,
+      STARTER_BUDGETS_KEY,
+    ]);
+    await seedStarterLedger(input);
   });
+}
 
-  await seedStarterLedger(input);
+export async function resetToEmptyLedger(client: SqliteClient): Promise<void> {
+  await client.transaction(async () => {
+    await clearLedgerTables(client);
+    await client.execute('DELETE FROM app_metadata WHERE key = ?', [STARTER_BUDGETS_KEY]);
+    await setStarterLedgerState(client, 'empty-ledger');
+  });
+}
+
+async function seedStarterBudgetsOnce(
+  budgetRepository: BudgetRepository,
+  categoryRepository: CategoryRepository,
+  client: SqliteClient,
+  referenceDate: Date,
+): Promise<void> {
+  const existingState = client.queryOne<{ value: string }>(
+    'SELECT value FROM app_metadata WHERE key = ?',
+    [STARTER_BUDGETS_KEY],
+  );
+  if (existingState) {
+    return;
+  }
+
+  const categories = await categoryRepository.list();
+  const monthlyTargets = [
+    { amountCents: 145000, name: 'Rent' },
+    { amountCents: 9000, name: 'Groceries' },
+    { amountCents: 6000, name: 'Restaurants' },
+    { amountCents: 5000, name: 'Transportation' },
+    { amountCents: 13000, name: 'Utilities' },
+    { amountCents: 2000, name: 'Subscriptions' },
+    { amountCents: 7500, name: 'Shopping' },
+    { amountCents: 5000, name: 'Healthcare' },
+    { amountCents: 4000, name: 'Entertainment' },
+    { amountCents: 3000, name: 'Miscellaneous' },
+  ] as const;
+
+  for (let monthOffset = -5; monthOffset <= 0; monthOffset += 1) {
+    const month = getSeedMonth(referenceDate, monthOffset);
+    for (const target of monthlyTargets) {
+      const category = categories.find(
+        (candidate) => candidate.type === 'expense'
+          && candidate.name.toLocaleLowerCase() === target.name.toLocaleLowerCase(),
+      );
+      if (!category) {
+        continue;
+      }
+
+      await budgetRepository.upsert({
+        amountCents: target.amountCents,
+        categoryId: category.id,
+        month,
+      });
+    }
+  }
+
+  await client.execute(
+    'INSERT INTO app_metadata (key, value) VALUES (?, ?)',
+    [STARTER_BUDGETS_KEY, 'seeded'],
+  );
 }
 
 async function ensureStarterCategories(categoryRepository: CategoryRepository): Promise<Category[]> {
@@ -327,8 +400,10 @@ function getSeedDate(referenceDate: Date, monthOffset: number, preferredDay: num
   const year = referenceDate.getFullYear();
   const monthIndex = referenceDate.getMonth() + monthOffset;
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-  const currentMonthLimit = monthOffset === 0 ? referenceDate.getDate() : lastDay;
-  const day = Math.min(preferredDay, lastDay, currentMonthLimit);
+  const currentDay = referenceDate.getDate();
+  const day = monthOffset === 0 && preferredDay > currentDay
+    ? Math.max(1, Math.round((preferredDay / 20) * currentDay))
+    : Math.min(preferredDay, lastDay);
   const date = new Date(year, monthIndex, day);
 
   return [
@@ -336,6 +411,19 @@ function getSeedDate(referenceDate: Date, monthOffset: number, preferredDay: num
     String(date.getMonth() + 1).padStart(2, '0'),
     String(date.getDate()).padStart(2, '0'),
   ].join('-');
+}
+
+function getSeedMonth(referenceDate: Date, monthOffset: number): string {
+  const date = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + monthOffset, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+async function clearLedgerTables(client: SqliteClient): Promise<void> {
+  await client.execute('DELETE FROM transaction_tags');
+  await client.execute('DELETE FROM budgets');
+  await client.execute('DELETE FROM transactions');
+  await client.execute('DELETE FROM accounts');
+  await client.execute('DELETE FROM categories');
 }
 
 function setStarterLedgerState(client: SqliteClient, value: string): Promise<void> {

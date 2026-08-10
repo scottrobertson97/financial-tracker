@@ -31,11 +31,49 @@ export function DashboardPage() {
   );
   const accountNames = useMemo(() => new Map(accounts.map((account) => [account.id, account.name])), [accounts]);
   const categoryNames = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
-  const summaryCards = [
-    { label: 'Total balance', value: formatCurrency(summary.totalBalanceCents) },
+  const positiveCategorySpendingCents = summary.categoryUsageChartData.reduce(
+    (total, category) => total + Math.max(category.amountCents, 0),
+    0,
+  );
+  const financialPositionCards = [
+    {
+      detail: 'Positive recorded account balances',
+      label: 'Recorded assets',
+      tone: 'text-ledger-ink',
+      value: formatCurrency(summary.recordedAssetsCents),
+    },
+    {
+      detail: 'Absolute value of negative balances',
+      label: 'Recorded debt',
+      tone: summary.recordedDebtCents > 0 ? 'text-ledger-loss' : 'text-ledger-ink',
+      value: formatCurrency(summary.recordedDebtCents),
+    },
+    {
+      detail: 'Recorded assets minus recorded debt',
+      label: 'Recorded net worth',
+      tone: summary.recordedNetWorthCents < 0 ? 'text-ledger-loss' : 'text-ledger-ink',
+      value: formatCurrency(summary.recordedNetWorthCents),
+    },
+    {
+      detail: summary.rollingCashSurplus.ratePercentage === null
+        ? 'No recorded income in this range'
+        : `${formatCurrency(Math.abs(summary.rollingCashSurplus.surplusCents))} ${
+          summary.rollingCashSurplus.surplusCents < 0 ? 'deficit' : 'surplus'
+        } across the range`,
+      label: `${trendMonths}-month cash-surplus rate`,
+      tone: summary.rollingCashSurplus.ratePercentage !== null
+        && summary.rollingCashSurplus.ratePercentage < 0
+        ? 'text-ledger-loss'
+        : 'text-ledger-ink',
+      value: summary.rollingCashSurplus.ratePercentage === null
+        ? 'Not available'
+        : `${summary.rollingCashSurplus.ratePercentage.toFixed(1)}%`,
+    },
+  ] as const;
+  const monthlyCards = [
     { label: 'Income this month', value: formatCurrency(summary.monthlyIncomeCents) },
-    { label: 'Expenses this month', value: formatCurrency(summary.monthlyExpensesCents) },
-    { label: 'Net cashflow', value: formatCurrency(summary.netCashflowCents) },
+    { label: 'Net spending this month', value: formatCurrency(summary.monthlyExpensesCents) },
+    { label: 'Net cashflow this month', value: formatCurrency(summary.netCashflowCents) },
   ] as const;
 
   useEffect(() => {
@@ -62,20 +100,37 @@ export function DashboardPage() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-6">
       <PageHeader
         title="Dashboard"
         eyebrow="Review"
-        description="Review current balances and spending alongside recent cashflow trends."
+        description="Review your recorded financial position, cashflow, spending, and items that need attention."
       />
       {pageError ? <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-ledger-loss">{pageError}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map((card) => (
+        {financialPositionCards.map((card) => (
           <div key={card.label} className="rounded-md border border-ledger-line bg-ledger-panel p-4">
             <p className="text-sm text-ledger-muted">{card.label}</p>
-            <p className="mt-2 text-2xl font-semibold">{card.value}</p>
+            <p className={`mt-2 text-2xl font-semibold ${card.tone}`}>{card.value}</p>
+            <p className="mt-1 text-xs text-ledger-muted">{card.detail}</p>
           </div>
         ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {monthlyCards.map((card) => (
+          <div key={card.label} className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+            <p className="text-sm text-ledger-muted">{card.label}</p>
+            <p className="mt-2 text-xl font-semibold">{card.value}</p>
+          </div>
+        ))}
+        <section aria-labelledby="review-queue-heading" className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+          <h2 id="review-queue-heading" className="text-sm text-ledger-muted">Review queue</h2>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <p><span className="text-xl font-semibold">{summary.reviewQueue.uncategorizedCount}</span><br /><span className="text-xs text-ledger-muted">Uncategorized</span></p>
+            <p><span className="text-xl font-semibold">{summary.reviewQueue.pendingCount}</span><br /><span className="text-xs text-ledger-muted">Pending</span></p>
+          </div>
+          <p className="mt-1 text-xs text-ledger-muted">Counts can overlap.</p>
+        </section>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-y border-ledger-line py-3">
         <div>
@@ -98,7 +153,7 @@ export function DashboardPage() {
           ))}
         </div>
       </div>
-      <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+      <section className="min-w-0 rounded-md border border-ledger-line bg-ledger-panel p-4">
         <div className="mb-4">
           <h2 className="text-base font-semibold">Monthly cashflow</h2>
           <p className="mt-1 text-sm text-ledger-muted">Income, expenses, and net movement across the selected range.</p>
@@ -106,14 +161,14 @@ export function DashboardPage() {
         {isLoading ? <p className="text-sm text-ledger-muted">Loading...</p> : <CashFlowTrendChart data={summary.cashFlowTrend} />}
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+        <section className="min-w-0 rounded-md border border-ledger-line bg-ledger-panel p-4">
           <div className="mb-4">
             <h2 className="text-base font-semibold">Total balance trend</h2>
             <p className="mt-1 text-sm text-ledger-muted">Recorded month-end balances through today.</p>
           </div>
           {isLoading ? <p className="text-sm text-ledger-muted">Loading...</p> : <BalanceTrendChart data={summary.balanceTrend} />}
         </section>
-        <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+        <section className="min-w-0 rounded-md border border-ledger-line bg-ledger-panel p-4">
           <div className="mb-4">
             <h2 className="text-base font-semibold">Spending pace</h2>
             <p className="mt-1 text-sm text-ledger-muted">Cumulative expenses compared with last month.</p>
@@ -122,14 +177,14 @@ export function DashboardPage() {
         </section>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
-          <h2 className="text-base font-semibold">Expense usage by category</h2>
+        <section className="min-w-0 rounded-md border border-ledger-line bg-ledger-panel p-4">
+          <h2 className="text-base font-semibold">Net spending by category</h2>
           {isLoading ? <p className="mt-3 text-sm text-ledger-muted">Loading...</p> : null}
           {!isLoading ? (
             <div className="mt-4">
               <CategoryUsageChart
                 data={summary.categoryUsageChartData}
-                totalExpensesCents={summary.monthlyExpensesCents}
+                positiveSpendingCents={positiveCategorySpendingCents}
               />
             </div>
           ) : null}
@@ -144,7 +199,7 @@ export function DashboardPage() {
             </div>
           ) : null}
         </section>
-        <section className="rounded-md border border-ledger-line bg-ledger-panel p-4">
+        <section className="min-w-0 rounded-md border border-ledger-line bg-ledger-panel p-4">
           <h2 className="text-base font-semibold">Recent transactions</h2>
           {isLoading ? <p className="mt-3 text-sm text-ledger-muted">Loading...</p> : null}
           {!isLoading && summary.recentTransactions.length === 0 ? (
